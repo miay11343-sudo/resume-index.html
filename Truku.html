@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>活動倒數計時與進度顯示</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Shippori+Mincho:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bgMain: '#f5f3ee',
+                        accent: '#b5703a',
+                        accentHover: '#985b2b',
+                        accentLight: '#f0e6d9',
+                        cardBg: '#ffffff',
+                        textPrimary: '#2c2925',
+                        textSecondary: '#787268',
+                        borderMuted: '#e5dfd3'
+                    },
+                    fontFamily: {
+                        mincho: ['"Shippori Mincho"', 'serif'],
+                        sans: ['"Noto Sans TC"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f5f3ee;
+            color: #2c2925;
+            font-family: 'Noto Sans TC', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .font-number {
+            font-family: 'Shippori Mincho', serif;
+            font-feature-settings: "tnum";
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f5f3ee;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d4caa8;
+            border-radius: 3px;
+        }
+
+        /* Ambient subtle glowing shadow */
+        .card-shadow {
+            box-shadow: 0 10px 30px -5px rgba(181, 112, 58, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+        }
+
+        /* Smooth transition for input drawer */
+        .drawer-transition {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* Dynamic progress bar gloss animation */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .progress-shimmer {
+            background: linear-gradient(
+                90deg, 
+                #b5703a 0%, 
+                #c98149 25%, 
+                #d8955d 50%, 
+                #c98149 75%, 
+                #b5703a 100%
+            );
+            background-size: 200% 100%;
+            animation: shimmer 4s infinite linear;
+        }
+
+        /* Pulse for target achieved badge */
+        @keyframes pulseSoft {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.03); opacity: 0.9; }
+        }
+
+        .pulse-finished {
+            animation: pulseSoft 2.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-accentLight selection:text-accent">
+
+    <!-- Top Action Bar -->
+    <header class="w-full px-4 sm:px-8 py-4 flex justify-between items-center z-20 border-b border-borderMuted/60 bg-bgMain/90 backdrop-blur-md sticky top-0">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-8 bg-accent rounded-full"></div>
+            <h1 class="text-xl sm:text-2xl font-bold font-mincho tracking-wide text-textPrimary">
+                倒數儀表板 <span class="text-xs font-sans font-normal text-textSecondary ml-2 hidden sm:inline-block">Event Countdown & Progress</span>
+            </h1>
+        </div>
+
+        <div class="flex items-center space-x-2 sm:space-x-3">
+            <!-- Toggle Form Button -->
+            <button id="toggleConfigBtn" onclick="toggleConfigPanel()" class="flex items-center space-x-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-borderMuted bg-cardBg hover:bg-accentLight hover:text-accent hover:border-accent/40 transition-all shadow-sm">
+                <svg id="configIcon" class="w-4 h-4 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                </svg>
+                <span id="configBtnText">隱藏設定</span>
+            </button>
+
+            <!-- Quick Preset Dropdown -->
+            <button onclick="loadDefaultPreset()" class="hidden sm:flex items-center space-x-1 px-3 py-2 text-sm font-medium rounded-lg border border-borderMuted bg-cardBg hover:bg-accentLight hover:text-accent transition-all shadow-sm" title="載入範例設定">
+                <svg class="w-4 h-4 text-textSecondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <span>預設範例</span>
+            </button>
+
+            <!-- Fullscreen Toggle -->
+            <button onclick="toggleFullScreen()" class="p-2 rounded-lg border border-borderMuted bg-cardBg hover:bg-accentLight hover:text-accent transition-all shadow-sm" title="全螢幕展示">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 flex-grow flex flex-col justify-center gap-8">
+
+        <!-- Configuration Panel (Drawer / Collapsible) -->
+        <section id="configPanel" class="drawer-transition overflow-hidden max-h-[800px] opacity-100 mb-2">
+            <div class="bg-cardBg rounded-2xl p-5 sm:p-6 border border-borderMuted card-shadow">
+                <div class="flex items-center justify-between pb-4 mb-4 border-b border-borderMuted/60">
+                    <h2 class="text-base sm:text-lg font-bold text-textPrimary flex items-center gap-2">
+                        <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        活動參數設定
+                    </h2>
+                    <span class="text-xs text-textSecondary bg-bgMain px-2.5 py-1 rounded-full">設定自動儲存至本機</span>
+                </div>
+
+                <form id="eventForm" class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6" onsubmit="event.preventDefault(); updateEventFromForm();">
+                    <!-- Event Name Input -->
+                    <div class="flex flex-col gap-1.5">
+                        <label for="eventNameInput" class="text-xs font-semibold text-textSecondary uppercase tracking-wider">活動名稱</label>
+                        <input type="text" id="eventNameInput" required placeholder="例如：2026 全球年度發表會" 
+                            class="px-4 py-2.5 rounded-xl border border-borderMuted bg-bgMain/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent text-textPrimary font-medium transition-all">
+                    </div>
+
+                    <!-- Start Date/Time Input -->
+                    <div class="flex flex-col gap-1.5">
+                        <label for="startDateInput" class="text-xs font-semibold text-textSecondary uppercase tracking-wider">開始時間</label>
+                        <input type="datetime-local" id="startDateInput" required 
+                            class="px-4 py-2.5 rounded-xl border border-borderMuted bg-bgMain/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent text-textPrimary font-medium transition-all">
+                    </div>
+
+                    <!-- Target Date/Time Input -->
+                    <div class="flex flex-col gap-1.5">
+                        <label for="endDateInput" class="text-xs font-semibold text-textSecondary uppercase tracking-wider">目標截止時間</label>
+                        <input type="datetime-local" id="endDateInput" required 
+                            class="px-4 py-2.5 rounded-xl border border-borderMuted bg-bgMain/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent text-textPrimary font-medium transition-all">
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="md:col-span-3 flex justify-end items-center gap-3 pt-2">
+                        <button type="button" onclick="setQuickDuration(7)" class="text-xs text-textSecondary hover:text-accent underline px-2 py-1">
+                            +7 天
+                        </button>
+                        <button type="button" onclick="setQuickDuration(30)" class="text-xs text-textSecondary hover:text-accent underline px-2 py-1">
+                            +30 天
+                        </button>
+                        <button type="submit" class="px-6 py-2.5 bg-accent hover:bg-accentHover text-white font-medium rounded-xl shadow-md transition-all flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            套用並儲存
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Public Screen Display Area -->
+        <section class="flex flex-col items-center justify-center my-auto py-2 sm:py-6 gap-8 sm:gap-12">
+            
+            <!-- Event Title & Status Badge -->
+            <div class="text-center space-y-3 px-4 max-w-4xl">
+                <div id="statusBadge" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase bg-accentLight text-accent border border-accent/20 transition-all">
+                    <span class="w-2 h-2 rounded-full bg-accent animate-ping"></span>
+                    <span id="statusText">倒數進行中</span>
+                </div>
+                
+                <h1 id="displayTitle" class="text-3xl sm:text-5xl md:text-6xl font-extrabold font-mincho tracking-tight text-textPrimary leading-tight break-words">
+                    <!-- Dynamic Event Title Inserted Here -->
+                </h1>
+            </div>
+
+            <!-- Large Countdown Numbers Block -->
+            <div class="w-full max-w-5xl grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 px-2">
+                <!-- Days Card -->
+                <div class="bg-cardBg rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-borderMuted card-shadow text-center flex flex-col justify-center items-center group hover:border-accent/30 transition-all">
+                    <span id="daysVal" class="font-number font-bold text-4xl sm:text-6xl md:text-7xl lg:text-8xl text-accent tracking-tight min-h-[1.1em] flex items-center justify-center">
+                        00
+                    </span>
+                    <span class="text-xs sm:text-sm font-semibold uppercase tracking-widest text-textSecondary mt-1 sm:mt-2 group-hover:text-accent transition-colors">
+                        Days / 天
+                    </span>
+                </div>
+
+                <!-- Hours Card -->
+                <div class="bg-cardBg rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-borderMuted card-shadow text-center flex flex-col justify-center items-center group hover:border-accent/30 transition-all">
+                    <span id="hoursVal" class="font-number font-bold text-4xl sm:text-6xl md:text-7xl lg:text-8xl text-accent tracking-tight min-h-[1.1em] flex items-center justify-center">
+                        00
+                    </span>
+                    <span class="text-xs sm:text-sm font-semibold uppercase tracking-widest text-textSecondary mt-1 sm:mt-2 group-hover:text-accent transition-colors">
+                        Hours / 時
+                    </span>
+                </div>
+
+                <!-- Minutes Card -->
+                <div class="bg-cardBg rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-borderMuted card-shadow text-center flex flex-col justify-center items-center group hover:border-accent/30 transition-all">
+                    <span id="minutesVal" class="font-number font-bold text-4xl sm:text-6xl md:text-7xl lg:text-8xl text-accent tracking-tight min-h-[1.1em] flex items-center justify-center">
+                        00
+                    </span>
+                    <span class="text-xs sm:text-sm font-semibold uppercase tracking-widest text-textSecondary mt-1 sm:mt-2 group-hover:text-accent transition-colors">
+                        Minutes / 分
+                    </span>
+                </div>
+
+                <!-- Seconds Card -->
+                <div class="bg-cardBg rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-borderMuted card-shadow text-center flex flex-col justify-center items-center group hover:border-accent/30 transition-all">
+                    <span id="secondsVal" class="font-number font-bold text-4xl sm:text-6xl md:text-7xl lg:text-8xl text-accent tracking-tight min-h-[1.1em] flex items-center justify-center">
+                        00
+                    </span>
+                    <span class="text-xs sm:text-sm font-semibold uppercase tracking-widest text-textSecondary mt-1 sm:mt-2 group-hover:text-accent transition-colors">
+                        Seconds / 秒
+                    </span>
+                </div>
+            </div>
+
+            <!-- Progress Bar Section -->
+            <div class="w-full max-w-4xl bg-cardBg rounded-2xl sm:rounded-3xl p-5 sm:p-8 border border-borderMuted card-shadow space-y-4">
+                
+                <!-- Progress Header Info -->
+                <div class="flex flex-wrap justify-between items-end gap-2 text-sm">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-textSecondary">時間進度表</span>
+                        <span id="timeRangeText" class="text-xs sm:text-sm font-medium text-textPrimary mt-0.5">
+                            -- / -- ~ -- / --
+                        </span>
+                    </div>
+                    
+                    <!-- Progress Percentage Text (Right Side) -->
+                    <div class="flex items-baseline space-x-1">
+                        <span id="progressPercent" class="font-number font-bold text-2xl sm:text-4xl text-accent">
+                            0.0%
+                        </span>
+                        <span class="text-sm sm:text-base font-bold text-accent">已過</span>
+                    </div>
+                </div>
+
+                <!-- Progress Track & Fill Bar -->
+                <div class="w-full bg-bgMain rounded-full h-5 sm:h-7 p-1 border border-borderMuted overflow-hidden relative shadow-inner">
+                    <div id="progressBarFill" 
+                         class="h-full rounded-full progress-shimmer transition-all duration-1000 ease-linear flex items-center justify-end pr-2"
+                         style="width: 0%;">
+                        <!-- Optional inner shine dot -->
+                        <div class="w-2 h-2 rounded-full bg-white/60 shadow-sm"></div>
+                    </div>
+                </div>
+
+                <!-- Progress Footer Meta Info -->
+                <div class="flex justify-between items-center text-xs text-textSecondary font-medium pt-1">
+                    <span id="startDateDisplay">開始：--</span>
+                    <span id="remainingTimeSummary" class="text-center font-semibold text-textPrimary">剩餘 --</span>
+                    <span id="endDateDisplay">截止：--</span>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer class="w-full text-center py-4 text-xs text-textSecondary border-t border-borderMuted/40 bg-bgMain/50">
+        <span>適合公用螢幕、研討會、專案進度追蹤與活動倒數展示</span>
+    </footer>
+
+    <script>
+        // Global State
+        let eventConfig = {
+            title: "2026年太魯閣族歲時祭儀",
+            startDate: "2026-09-01T10:00",
+            endDate: "2026-10-03T16:00"
+        };
+
+        let timerInterval = null;
+
+        // Initialize Application
+        window.addEventListener('DOMContentLoaded', () => {
+            initDefaultDatesIfEmpty();
+            loadConfigFromStorage();
+            populateFormFields();
+            updateDisplay();
+            startCountdown();
+        });
+
+        // Set default start/end dates if none exist
+        function initDefaultDatesIfEmpty() {
+            if (!eventConfig.startDate) {
+                eventConfig.startDate = "2026-09-01T10:00";
+            }
+            if (!eventConfig.endDate) {
+                eventConfig.endDate = "2026-10-03T16:00";
+            }
+        }
+
+        // Format Date object to "YYYY-MM-DDTHH:mm" for datetime-local
+        function formatDateForInput(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // Format Date object to user-friendly readable string
+        function formatDateReadable(date) {
+            if (isNaN(date.getTime())) return '--';
+            const m = date.getMonth() + 1;
+            const d = date.getDate();
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            return `${m}月${d}日 ${hh}:${mm}`;
+        }
+
+        function loadConfigFromStorage() {
+            try {
+                const stored = localStorage.getItem('countdown_event_config');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (parsed.title && parsed.startDate && parsed.endDate) {
+                        // Upgrade standard default preset if old titles are found
+                        if (parsed.title === "2026 年度旗艦產品發表會" || parsed.title === "2026 年度重點專案上線倒數") {
+                            eventConfig.title = "2026年太魯閣族歲時祭儀";
+                            eventConfig.startDate = "2026-09-01T10:00";
+                            eventConfig.endDate = "2026-10-03T16:00";
+                            saveConfigToStorage();
+                        } else {
+                            eventConfig = parsed;
+                        }
+                    }
+                } else {
+                    saveConfigToStorage();
+                }
+            } catch (e) {
+                console.warn('Could not load from localStorage', e);
+            }
+        }
+
+        function saveConfigToStorage() {
+            try {
+                localStorage.setItem('countdown_event_config', JSON.stringify(eventConfig));
+            } catch (e) {
+                console.warn('Could not save to localStorage', e);
+            }
+        }
+
+        function populateFormFields() {
+            document.getElementById('eventNameInput').value = eventConfig.title;
+            document.getElementById('startDateInput').value = eventConfig.startDate;
+            document.getElementById('endDateInput').value = eventConfig.endDate;
+        }
+
+        function updateEventFromForm() {
+            const name = document.getElementById('eventNameInput').value.trim();
+            const start = document.getElementById('startDateInput').value;
+            const end = document.getElementById('endDateInput').value;
+
+            if (!name || !start || !end) return;
+
+            const startTime = new Date(start).getTime();
+            const endTime = new Date(end).getTime();
+
+            if (endTime <= startTime) {
+                alert('目標截止時間必須晚於開始時間！');
+                return;
+            }
+
+            eventConfig.title = name;
+            eventConfig.startDate = start;
+            eventConfig.endDate = end;
+
+            saveConfigToStorage();
+            updateDisplay();
+        }
+
+        function loadDefaultPreset() {
+            eventConfig.title = "2026年太魯閣族歲時祭儀";
+            eventConfig.startDate = "2026-09-01T10:00";
+            eventConfig.endDate = "2026-10-03T16:00";
+
+            populateFormFields();
+            saveConfigToStorage();
+            updateDisplay();
+        }
+
+        function setQuickDuration(days) {
+            const startInput = document.getElementById('startDateInput');
+            let start = startInput.value ? new Date(startInput.value) : new Date();
+            if (isNaN(start.getTime())) start = new Date();
+
+            const end = new Date(start.getTime() + (days * 24 * 60 * 60 * 1000));
+            document.getElementById('endDateInput').value = formatDateForInput(end);
+        }
+
+        function startCountdown() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateDisplay, 1000);
+        }
+
+        function updateDisplay() {
+            const now = new Date().getTime();
+            const start = new Date(eventConfig.startDate).getTime();
+            const end = new Date(eventConfig.endDate).getTime();
+
+            // Render Title
+            document.getElementById('displayTitle').textContent = eventConfig.title || "未命名活動";
+
+            // Render Readable Start / End dates
+            const startDateObj = new Date(eventConfig.startDate);
+            const endDateObj = new Date(eventConfig.endDate);
+            document.getElementById('startDateDisplay').textContent = `開始：${formatDateReadable(startDateObj)}`;
+            document.getElementById('endDateDisplay').textContent = `截止：${formatDateReadable(endDateObj)}`;
+            document.getElementById('timeRangeText').textContent = `${formatDateReadable(startDateObj)} ～ ${formatDateReadable(endDateObj)}`;
+
+            const totalDuration = end - start;
+            const statusBadge = document.getElementById('statusBadge');
+            const statusText = document.getElementById('statusText');
+
+            // CASE 1: Event completed / Expired
+            if (now >= end) {
+                renderNumbers(0, 0, 0, 0);
+                setProgress(100);
+                
+                statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 pulse-finished";
+                statusText.textContent = "🎉 活動目標已達成 / 已到期";
+                document.getElementById('remainingTimeSummary').textContent = "時間已截止";
+                return;
+            }
+
+            // CASE 2: Event not started yet
+            if (now < start) {
+                const remainingToStart = start - now;
+                const d = Math.floor(remainingToStart / (1000 * 60 * 60 * 24));
+                const h = Math.floor((remainingToStart % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const m = Math.floor((remainingToStart % (1000 * 60 * 60)) / (1000 * 60));
+                const s = Math.floor((remainingToStart % (1000 * 60)) / 1000);
+
+                renderNumbers(d, h, m, s);
+                setProgress(0);
+
+                statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300";
+                statusText.textContent = "⏳ 活動尚未開始 (距離開始)";
+                document.getElementById('remainingTimeSummary').textContent = "等待活動啟動";
+                return;
+            }
+
+            // CASE 3: Event in progress
+            const elapsed = now - start;
+            const remaining = end - now;
+
+            // Percentage calculation
+            let percent = (elapsed / totalDuration) * 100;
+            percent = Math.min(Math.max(percent, 0), 100);
+
+            // Time units calculation
+            const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+
+            renderNumbers(days, hours, minutes, seconds);
+            setProgress(percent);
+
+            statusBadge.className = "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase bg-accentLight text-accent border border-accent/20";
+            statusText.textContent = "倒數進行中";
+
+            // Format summary text
+            if (days > 0) {
+                document.getElementById('remainingTimeSummary').textContent = `剩餘約 ${days} 天 ${hours} 小時`;
+            } else {
+                document.getElementById('remainingTimeSummary').textContent = `最後倒數 ${hours} 小時 ${minutes} 分`;
+            }
+        }
+
+        // Helper to update numbers in DOM with padded zeros
+        function renderNumbers(d, h, m, s) {
+            document.getElementById('daysVal').textContent = String(d).padStart(2, '0');
+            document.getElementById('hoursVal').textContent = String(h).padStart(2, '0');
+            document.getElementById('minutesVal').textContent = String(m).padStart(2, '0');
+            document.getElementById('secondsVal').textContent = String(s).padStart(2, '0');
+        }
+
+        // Helper to update progress bar width & percentage text
+        function setProgress(percent) {
+            const formatted = percent.toFixed(1);
+            document.getElementById('progressBarFill').style.width = `${percent}%`;
+            document.getElementById('progressPercent').textContent = `${formatted}%`;
+        }
+
+        function toggleConfigPanel() {
+            const panel = document.getElementById('configPanel');
+            const icon = document.getElementById('configIcon');
+            const btnText = document.getElementById('configBtnText');
+
+            if (panel.classList.contains('max-h-0')) {
+                // Expand
+                panel.classList.remove('max-h-0', 'opacity-0', 'mb-0');
+                panel.classList.add('max-h-[800px]', 'opacity-100', 'mb-2');
+                icon.style.transform = 'rotate(0deg)';
+                btnText.textContent = '隱藏設定';
+            } else {
+                // Collapse
+                panel.classList.remove('max-h-[800px]', 'opacity-100', 'mb-2');
+                panel.classList.add('max-h-0', 'opacity-0', 'mb-0');
+                icon.style.transform = 'rotate(180deg)';
+                btnText.textContent = '展開設定';
+            }
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch((err) => {
+                    console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
